@@ -8,6 +8,8 @@ import torch
 import torch.utils.checkpoint as checkpoint
 from torch.nn import functional as F
 from torch.optim.adam import Adam
+from torch.optim.adamw import AdamW
+from torch.optim.rmsprop import RMSprop
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 
 from diffusers.image_processor import VaeImageProcessor
@@ -638,13 +640,17 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
         indices: List[int], 
         smooth_attentions: bool = True,
         K: int = 1,
-        attention_res: int = 16,) -> torch.Tensor:
+        attention_res: int = 16,
+        use_cross_attn_conflict_loss=False,
+        ) -> torch.Tensor:
         
         # -----------------------------
         # cross-attention response loss
         # -----------------------------
         aggregate_cross_attention_maps = self.attention_store.aggregate_attention(
             from_where=("up", "down", "mid"), is_cross=True)
+        # print(aggregate_cross_attention_maps.shape)
+        # input()
         
         # cross attention map preprocessing
         cross_attention_maps = aggregate_cross_attention_maps[:, :, 1:-1]
@@ -653,6 +659,10 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
 
         # Shift indices since we removed the first token
         indices = [index - 1 for index in indices]
+        # print(indices)
+        # input()
+        # print(cross_attention_maps)
+        # input()
 
         # clean_cross_attention_loss
         clean_cross_attention_loss = 0.
@@ -661,6 +671,8 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
         topk_value_list, topk_coord_list_list = [], []
         for i in indices:
             cross_attention_map_cur_token = cross_attention_maps[:, :, i]
+            # print(cross_attention_map_cur_token.shape)
+            # input()
             if smooth_attentions: cross_attention_map_cur_token = fn_smoothing_func(cross_attention_map_cur_token)
             
             topk_coord_list, _ = fn_get_topk(cross_attention_map_cur_token, K=K)
@@ -688,6 +700,32 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
 
         cross_attn_loss_list = [max(0 * curr_max, 1.0 - curr_max) for curr_max in topk_value_list]
         cross_attn_loss = max(cross_attn_loss_list)
+
+        # ----------------------------
+        # cross-attention conflict loss
+        # ----------------------------
+        if use_cross_attn_conflict_loss:
+            cross_attention_conf_maps = self.attention_store.aggregate_attention(
+                from_where=("up", "down", "mid"), is_cross=True)
+            
+            cross_attention_conf_map_list = []
+            for i in indices:
+                cross_attention_conf_map_list.append(cross_attention_conf_maps[:, :, i])
+
+            cross_attn_conf_loss, number_cross_attn_conf_pair = 0.0, 0
+            number_token = len(cross_attention_conf_map_list)
+            for i in range(number_token):
+                for j in range(i + 1, number_token): 
+                    number_cross_attn_conf_pair = number_cross_attn_conf_pair + 1
+                    cross_attention_conf_map_1 = cross_attention_conf_map_list[i]
+                    cross_attention_conf_map_2 = cross_attention_conf_map_list[j]
+
+                    cross_attention_conf_map_min = torch.min(cross_attention_conf_map_1, cross_attention_conf_map_2) 
+                    cross_attention_conf_map_sum = (cross_attention_conf_map_1 + cross_attention_conf_map_2)
+                    cur_cross_attn_conf_loss = (cross_attention_conf_map_min.sum() / (cross_attention_conf_map_sum.sum() + 1e-6))
+                    cross_attn_conf_loss = cross_attn_conf_loss + cur_cross_attn_conf_loss
+
+            if number_cross_attn_conf_pair > 0: cross_attn_conf_loss = cross_attn_conf_loss / number_cross_attn_conf_pair
 
         # ----------------------------
         # self-attention conflict loss
@@ -730,9 +768,23 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
 
         cross_attn_loss = cross_attn_loss * torch.ones(1).to(self._execution_device)
         self_attn_loss  = self_attn_loss * torch.ones(1).to(self._execution_device)
-
-        if cross_attn_loss > 0.5:    self_attn_loss = self_attn_loss * 0
-        joint_loss = cross_attn_loss * 1. +  self_attn_loss * 1. + clean_cross_attention_loss * 1.
+        if use_cross_attn_conflict_loss:
+            cross_attn_conf_loss = cross_attn_conf_loss * torch.ones(1).to(self._execution_device)
+        
+        # print(f"cross_attn_loss: {cross_attn_loss}", f"self_attn_loss: {self_attn_loss}", f"cross_attn_conf_loss: {cross_attn_conf_loss}")
+        if cross_attn_loss > 0.5:    
+            self_attn_loss = self_attn_loss * 0
+            if use_cross_attn_conflict_loss:
+                cross_attn_conf_loss = cross_attn_conf_loss * 0
+        if use_cross_attn_conflict_loss:
+            joint_loss = cross_attn_loss * 1. \
+                        + self_attn_loss * 1. \
+                        + clean_cross_attention_loss * 1. \
+                        + cross_attn_conf_loss * (0.5)
+        else:
+            joint_loss = cross_attn_loss * 1. \
+                        + self_attn_loss * 1. \
+                        + clean_cross_attention_loss * 1.
 
         return joint_loss, cross_attn_loss, self_attn_loss
 
@@ -809,13 +861,15 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
         generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
         eta: float = 0.0,
         do_classifier_free_guidance: bool = False,
+        use_cross_attn_conflict_loss: bool = False,
+        opt: Optional[torch.optim.Optimizer] = Adam,
     ):
         '''InitNO: Boosting Text-to-Image Diffusion Models via Initial Noise Optimization'''
 
         latents = latents.clone().detach()
         log_var, mu = torch.zeros_like(latents), torch.zeros_like(latents)
         log_var, mu = log_var.clone().detach().requires_grad_(True), mu.clone().detach().requires_grad_(True)
-        optimizer = Adam([log_var, mu], lr=initno_lr, eps=1e-3)
+        optimizer = opt([log_var, mu], lr=initno_lr, eps=1e-3)
 
         # Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
@@ -842,7 +896,7 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
                 else: noise_pred_text = self.unet(optimized_latents, t, encoder_hidden_states=text_embeddings[1].unsqueeze(0)).sample
 
                 joint_loss, cross_attn_loss, self_attn_loss = self.fn_compute_loss(
-                    indices=indices, K=1)
+                    indices=indices, K=1, use_cross_attn_conflict_loss=use_cross_attn_conflict_loss)
                 joint_loss_list.append(joint_loss), cross_attn_loss_list.append(cross_attn_loss), self_attn_loss_list.append(self_attn_loss)
 
                 if denoising_step_for_loss > 1:
@@ -944,7 +998,9 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
         seed: int = 0,
         K: int = 1,
         run_sd: bool = True,
-        run_initno: bool = True
+        run_initno: bool = True,
+        use_cross_attn_conflict_loss: bool = False,
+        opt: Optional[torch.optim.Optimizer] = Adam,
     ):
         r"""
         The call function to the pipeline for generation.
@@ -1135,6 +1191,8 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
                         eta=eta,
                         do_classifier_free_guidance=do_classifier_free_guidance,
                         round=round,
+                        use_cross_attn_conflict_loss=use_cross_attn_conflict_loss,
+                        opt=opt,
                     )
                     optimized_latents_pool.append((cross_self_attn_loss, round, optimized_latents.clone(), latents.clone(), optimization_succeed))
                     if optimization_succeed: break
@@ -1168,6 +1226,8 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
                         eta=eta,
                         do_classifier_free_guidance=do_classifier_free_guidance,
                         round=round,
+                        use_cross_attn_conflict_loss=use_cross_attn_conflict_loss,
+                        opt=opt,
                     ) 
                     latents = optimized_latents
                 

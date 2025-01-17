@@ -7,12 +7,16 @@ from initno.pipelines.pipeline_sd_initno import StableDiffusionInitNOPipeline
 # ---------
 # Arguments
 # ---------
-SEEDS           = [0]
+SEEDS           = [0,1,2]
 SD14_VERSION    = "CompVis/stable-diffusion-v1-4"
 SD15_VERSION    = "runwayml/stable-diffusion-v1-5"
 PROMPT          = "a cat and a rabbit"
 token_indices   = [2, 5]
-result_root     = "results"
+result_root     = "InitNO_results"
+
+# Improvments Settings
+USE_CROSS_ATTN_CONFLICT_LOSS = False
+OPT = "adam"
 
 os.makedirs('{:s}'.format(result_root), exist_ok=True)
 
@@ -38,6 +42,8 @@ def main():
             result_root=result_root,
             seed=SEED,
             run_sd=False,
+            use_cross_attn_conflict_loss=USE_CROSS_ATTN_CONFLICT_LOSS,
+            opt=OPT,
         ).images
 
         image = images[0]

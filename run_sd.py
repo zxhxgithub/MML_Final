@@ -4,12 +4,12 @@ import torch
 from initno.pipelines.pipeline_sd import StableDiffusionAttendAndExcitePipeline
 
 
-SEEDS           = [0]
+SEEDS           = [0,1,2]
 SD14_VERSION    = "CompVis/stable-diffusion-v1-4"
 SD15_VERSION    = "runwayml/stable-diffusion-v1-5"
 PROMPT          = "a cat and a rabbit"
 token_indices   = [2, 5]
-result_root     = "results"
+result_root     = "SD_results"
 
 os.makedirs('{:s}'.format(result_root), exist_ok=True)
 
