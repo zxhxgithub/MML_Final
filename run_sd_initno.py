@@ -17,7 +17,7 @@ result_root     = "InitNO_results"
 
 # Improvments Settings
 USE_CROSS_ATTN_CONFLICT_LOSS = True
-OPT = SGD # Adam or RMSprop
+OPT = Adam # Adam or RMSprop
 add_loss = "cross_attn" if USE_CROSS_ATTN_CONFLICT_LOSS else "none"
 optim = "adam" if OPT == Adam else "rmsprop"
 
