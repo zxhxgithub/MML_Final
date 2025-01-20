@@ -17,7 +17,7 @@ result_root     = "InitNO_results"
 
 # Improvments Settings
 USE_CROSS_ATTN_CONFLICT_LOSS = True
-OPT = SGD # [Adam, AdamW, RMSprop, SGD]
+OPT = Adam # [Adam, AdamW, RMSprop, SGD]
 add_loss = "cross_attn" if USE_CROSS_ATTN_CONFLICT_LOSS else "none"
 opt_dict = {Adam: "adam", AdamW: "adamw", RMSprop: "rmsprop", SGD: "sgd"}
 optim = opt_dict[OPT]
