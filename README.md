@@ -1,9 +1,6 @@
 ## Multimodal Final Project<br><sub>[Boosting Text-to-Image Diffusion Models via Initial Noise Optimization](https://arxiv.org/abs/2404.04650)</sub>
-<<<<<<< HEAD
 
 In this project we reproduce the results of the paper and propose some improvements at our attempt to boost the performance of and speed up the generation of text-to-image diffusion model *InitNO*. The detailed information can be found in our course report.
-=======
->>>>>>> 0ed82afe6832d4ce8dcc3cb7d7b7dc6e0306d0f4
 
 ## Getting started
 
