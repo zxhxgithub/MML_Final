@@ -747,7 +747,7 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
 
         self_attn_loss, number_self_attn_loss_pair = 0, 0
         number_token = len(self_attention_map_list)
-        mix_loss = 0.0
+        # mix_loss = 0.0
         for i in range(number_token):
             for j in range(i + 1, number_token): 
                 number_self_attn_loss_pair = number_self_attn_loss_pair + 1

@@ -1,6 +1,6 @@
 import os
 import torch
-from torch.optim import Adam, RMSprop, SGD, AdamW
+from torch.optim import Adam, AdamW, RMSprop, SGD
 
 from initno.pipelines.pipeline_sd_initno import StableDiffusionInitNOPipeline
 
