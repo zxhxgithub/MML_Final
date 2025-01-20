@@ -7,9 +7,7 @@ import numpy as np
 import torch
 import torch.utils.checkpoint as checkpoint
 from torch.nn import functional as F
-from torch.optim.adam import Adam
-from torch.optim.adamw import AdamW
-from torch.optim.rmsprop import RMSprop
+from torch.optim import Adam, AdamW, RMSprop, SGD
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 
 from diffusers.image_processor import VaeImageProcessor
@@ -649,8 +647,6 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
         # -----------------------------
         aggregate_cross_attention_maps = self.attention_store.aggregate_attention(
             from_where=("up", "down", "mid"), is_cross=True)
-        # print(aggregate_cross_attention_maps.shape)
-        # input()
         
         # cross attention map preprocessing
         cross_attention_maps = aggregate_cross_attention_maps[:, :, 1:-1]
@@ -659,10 +655,6 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
 
         # Shift indices since we removed the first token
         indices = [index - 1 for index in indices]
-        # print(indices)
-        # input()
-        # print(cross_attention_maps)
-        # input()
 
         # clean_cross_attention_loss
         clean_cross_attention_loss = 0.
@@ -671,8 +663,6 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
         topk_value_list, topk_coord_list_list = [], []
         for i in indices:
             cross_attention_map_cur_token = cross_attention_maps[:, :, i]
-            # print(cross_attention_map_cur_token.shape)
-            # input()
             if smooth_attentions: cross_attention_map_cur_token = fn_smoothing_func(cross_attention_map_cur_token)
             
             topk_coord_list, _ = fn_get_topk(cross_attention_map_cur_token, K=K)
@@ -700,6 +690,10 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
 
         cross_attn_loss_list = [max(0 * curr_max, 1.0 - curr_max) for curr_max in topk_value_list]
         cross_attn_loss = max(cross_attn_loss_list)
+        # calculate the neglecting loss
+        # neg_loss = [max(0, 1.0 - torch.sqrt(curr_max)) for curr_max in topk_value_list]
+        # neg_loss = sum(neg_loss) / len(neg_loss)
+        # print("neg_loss", neg_loss)
 
         # ----------------------------
         # cross-attention conflict loss
@@ -753,6 +747,7 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
 
         self_attn_loss, number_self_attn_loss_pair = 0, 0
         number_token = len(self_attention_map_list)
+        mix_loss = 0.0
         for i in range(number_token):
             for j in range(i + 1, number_token): 
                 number_self_attn_loss_pair = number_self_attn_loss_pair + 1
@@ -763,8 +758,12 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
                 self_attention_map_sum = (self_attention_map_1 + self_attention_map_2) 
                 cur_self_attn_loss = (self_attention_map_min.sum() / (self_attention_map_sum.sum() + 1e-6))
                 self_attn_loss = self_attn_loss + cur_self_attn_loss
+                # mix_loss += torch.sum(self_attention_map_1*self_attention_map_2) / (torch.sum(self_attention_map_1**2) + torch.sum(self_attention_map_2**2) + 1e-6)
 
         if number_self_attn_loss_pair > 0: self_attn_loss = self_attn_loss / number_self_attn_loss_pair
+        # calculate the mixing loss
+        # if mix_loss > 0: mix_loss = mix_loss / number_self_attn_loss_pair
+        # print("mix_loss", mix_loss)
 
         cross_attn_loss = cross_attn_loss * torch.ones(1).to(self._execution_device)
         self_attn_loss  = self_attn_loss * torch.ones(1).to(self._execution_device)
@@ -869,7 +868,12 @@ class StableDiffusionInitNOPipeline(DiffusionPipeline, TextualInversionLoaderMix
         latents = latents.clone().detach()
         log_var, mu = torch.zeros_like(latents), torch.zeros_like(latents)
         log_var, mu = log_var.clone().detach().requires_grad_(True), mu.clone().detach().requires_grad_(True)
-        optimizer = opt([log_var, mu], lr=initno_lr, eps=1e-3)
+        if opt in [Adam, RMSprop]:
+            optimizer = opt([log_var, mu], lr=initno_lr, eps=1e-3)
+        elif opt in [SGD]:
+            optimizer = opt([log_var, mu], lr=initno_lr)
+        else:
+            raise ValueError(f"Optimizer {opt} not supported for InitNO.")
 
         # Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
