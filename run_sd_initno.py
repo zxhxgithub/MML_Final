@@ -1,6 +1,6 @@
 import os
 import torch
-from torch.optim import Adam, RMSprop
+from torch.optim import Adam, AdamW, RMSprop, SGD
 
 from initno.pipelines.pipeline_sd_initno import StableDiffusionInitNOPipeline
 
@@ -17,7 +17,7 @@ result_root     = "InitNO_results"
 
 # Improvments Settings
 USE_CROSS_ATTN_CONFLICT_LOSS = True
-OPT = Adam # Adam or RMSprop
+OPT = SGD # Adam or RMSprop
 add_loss = "cross_attn" if USE_CROSS_ATTN_CONFLICT_LOSS else "none"
 optim = "adam" if OPT == Adam else "rmsprop"
 
