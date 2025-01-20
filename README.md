@@ -1,21 +1,8 @@
-## Boosting Text-to-Image Diffusion Models via Initial Noise Optimization<br><sub>Official PyTorch code release for the CVPR 2024 paper: https://arxiv.org/abs/2404.04650</sub>
-
-![I4VGen](./docs/initno.png)
-
-**InitNO: Boosting Text-to-Image Diffusion Models via Initial Noise Optimization**<br>
-Xiefan Guo, Jinlin Liu, Miaomiao Cui, Jiankai Li, Hongyu Yang, Di Huang<br>
-https://xiefan-guo.github.io/initno<br>
-
-Abstract: *Our investigation dives into the exploration of various random noise configurations and their subsequent influence on the generated results. Notably, when different noises are input into SD under identical text prompts, there are marked discrepancy in the alignment between the generated image and the given text. Unsuccessful cases are delineated by gray contours, while successful instances are indicated by yellow contours. This observation underscores the pivotal role of initial noise in determining the success of the generation process. Based on this insight, we divide the initial noise space into valid and invalid regions. Introducing Initial Noise Optimization (InitNO), identified as orange arrow, our method is capable of guiding any initial noise into the valid region, thereby synthesizing high-fidelity results (orange contours) that precisely correspond to the given prompt. The same location employs the same random seed.*
-
-## Requirements
-
-* Linux and Windows are supported, but we recommend Linux for performance and compatibility reasons.
-* All experiments are conducted on a single NVIDIA V100 GPU (32 GB).
+## Multimodal Final Project<br><sub>[Boosting Text-to-Image Diffusion Models via Initial Noise Optimization](https://arxiv.org/abs/2404.04650)</sub>
 
 ## Getting started
 
-**Python libraries:** See environment.yml for exact library dependencies. You can use the following commands to create and activate your InitNO Python environment:
+**Python libraries:** You can use the following commands to create and activate your InitNO Python environment:
 
 ```.bash
 # Create conda environment
@@ -24,7 +11,7 @@ conda env create -f environment.yaml
 conda activate initno_env
 ```
 
-**Generating images:** Our code relies on Hugging Face's [diffusers](https://github.com/huggingface/diffusers) library for downloading the Stable Diffusion model. Run the following command to generate images.
+**Generating images:** Run the following command to generate images.
 ```.bash
 python run_sd_initno.py
 ```
@@ -36,24 +23,10 @@ You can specify the following arguments in `run_sd_initno.py`:
 * `token_indices`: a list of target token indices
 * `result_root`: path to save generated results
 
-**Visualization of attention maps:** We provide the `fn_show_attention` function in `attn_utils.py` for attention map visualization. By running the above command, you will be able to obtain the visualization of attention maps along with the generated images.
-
-**Float16 precision:** You can use `torch.float16` when loading the stable diffusion model to speed up inference and reduce memory usage. However, this may somewhat degrade the quality of the generated results.
-```python
-pipe = StableDiffusionInitNOPipeline.from_pretrained(SD14_VERSION, torch_dtype=torch.float16).to("cuda")
-```
-
-## Citation
-
-```bibtex
-@inproceedings{guo2024initno,
-    title     = {InitNO: Boosting Text-to-Image Diffusion Models via Initial Noise Optimization},
-    author    = {Guo, Xiefan and Liu, Jinlin and Cui, Miaomiao and Li, Jiankai and Yang, Hongyu and Huang, Di},
-    booktitle = {CVPR},
-    year      = {2024}
-}
-```
+For **Our Improvements**, we provide the following arguments:
+* `USE_CROSS_ATTN_CONFLICT_LOSS`: whether to use the cross-attention conflict loss
+* `OPT`: assign the optimizer for the initial noise optimization, providing `adam` and `rmsprop` options
 
 ## Acknowledgments
 
-The code is built upon [diffusers](https://github.com/huggingface/diffusers) and [Attend-and-Excite](https://github.com/yuval-alaluf/Attend-and-Excite), we thank all the contributors for open-sourcing.
+The code is built upon [InitNO](https://xiefan-guo.github.io/initno), and we adopt the official evaluation prompts from [Attend and Excite](https://github.com/yuval-alaluf/Attend-and-Excite). We thank the authors for open-sourcing.
